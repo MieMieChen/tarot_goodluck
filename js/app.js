@@ -2,6 +2,7 @@
 import { CARDS, CARD_BY_ID, imgSrc } from "./data/index.js";
 import { t, L, other, getLang, setLang, formatDate, formatDay } from "./i18n.js";
 import { SPREADS, SPREAD_ORDER, THREE_SETS, CELTIC_LAYOUT } from "./spreads.js";
+import { AI_MODELS, getAiSettings, saveAiSettings, hasApiKey, hasQuestion, streamReading, testConnection, localReading } from "./ai.js";
 
 const REVERSED_ONE_IN = 3;      // when reversed cards are allowed, ~1 in 3 comes up reversed
 const HISTORY_MAX = 60;
@@ -60,6 +61,7 @@ const state = {
   reading: null,                       // the in-progress (or viewed) reading
   modal: null,                         // { id, orient }
   lib: { filter: "all", query: "" },
+  settingsDraft: null,
 };
 const app = document.getElementById("app");
 const modalRoot = document.getElementById("modal-root");
@@ -82,6 +84,7 @@ function render() {
     case "reading": renderReading(r.param); break;
     case "library": renderLibrary(); break;
     case "history": r.param ? renderHistoryEntry(r.param) : renderHistory(); break;
+    case "settings": renderSettings(); break;
     default: location.hash = "#/"; return;
   }
   renderChrome();
@@ -89,6 +92,7 @@ function render() {
 
 function renderChrome() {
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => { el.title = t(el.dataset.i18nTitle); el.setAttribute("aria-label", t(el.dataset.i18nTitle)); });
   const btn = document.getElementById("lang-toggle");
   btn.textContent = t("lang.switch");
   btn.title = t("lang.switchTitle");
@@ -448,6 +452,7 @@ function renderSpread(r, spread) {
         <div class="reading-item ${c.revealed ? "" : "pending"}" id="reading-${i}">
           ${c.revealed ? readingItemHtml(r, spread, i) : `<p class="muted small"><span class="num">${i + 1}</span>${esc(L(positions[i].name))} · ${t("reading.waiting")}</p>`}
         </div>`).join("")}
+      <div class="ai-section" id="ai-section" hidden></div>
       <div class="reading-foot" id="reading-foot" ${allRevealed ? "" : "hidden"}>
         <p class="muted small">${t("reading.disclaimer")}</p>
         <div class="actions">
@@ -459,6 +464,7 @@ function renderSpread(r, spread) {
       </div>
     </section>
   </section>`;
+  if (allRevealed) mountAi(r);
 }
 
 function revealCard(i) {
@@ -493,6 +499,7 @@ function onAllRevealed(r) {
     const note = document.getElementById("saved-note");
     if (note) note.textContent = t("spread.saved");
   }
+  mountAi(r);
 }
 
 async function revealAll() {
@@ -574,6 +581,7 @@ function renderHistoryEntry(id) {
     ts: e.ts,
     date: e.date,
     historyId: e.id,
+    ai: e.ai?.text ? { status: "done", text: e.ai.text, model: e.ai.model || "", lang: e.ai.lang || "" } : undefined,
   };
   renderSpread(state.reading, SPREADS[e.spreadId]);
 }
@@ -597,6 +605,12 @@ function readingText(r) {
     lines.push(`   ${t("reading.advice")}: ${card.advice[lang]}`);
     lines.push("");
   });
+  if (hasQuestion(r)) {
+    lines.push(t("ai.title"));
+    const body = r.ai?.status === "done" && r.ai.text ? r.ai.text : localReading(r, positions);
+    lines.push(body.replace(/\*\*/g, ""));
+    lines.push("");
+  }
   lines.push(`— ${location.origin}${location.pathname}`);
   return lines.join("\n");
 }
@@ -626,6 +640,163 @@ function toast(msg) {
   el.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+}
+
+/* ======================================================================
+   Question-aware interpretation (Claude via the user's own key, or local rules)
+   ====================================================================== */
+function aiTextHtml(text) {
+  return String(text || "").trim().split(/\n{2,}/).filter(Boolean).map((p) => {
+    let h = esc(p.trim());
+    h = h.replace(/^#{1,4}\s+(.+)$/gm, "<strong>$1</strong>");
+    h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    h = h.replace(/^[-•]\s+/gm, "");
+    return `<p>${h.replace(/\n/g, "<br>")}</p>`;
+  }).join("");
+}
+
+function mountAi(r) {
+  const box = document.getElementById("ai-section");
+  if (!box) return;
+  if (!hasQuestion(r)) { box.hidden = true; return; }
+  box.hidden = false;
+  if (!r.ai) r.ai = { status: "idle", text: "", model: "", lang: "" };
+  renderAiBox(r);
+  const s = getAiSettings();
+  if (r.ai.status === "idle" && !r.readonly && s.apiKey.trim() && s.auto) startAi(r);
+}
+
+function renderAiBox(r) {
+  const box = document.getElementById("ai-section");
+  if (!box || !r.ai) return;
+  const ai = r.ai;
+  const keyed = hasApiKey();
+  const focus = r.question?.trim() || r.topic?.trim() || (r.questions || []).filter((q) => q && q.trim()).join(" / ");
+  let body = "";
+  let actions = "";
+  if (ai.status === "streaming") {
+    body = `<div class="ai-status"><span class="spinner" aria-hidden="true"></span>${t("ai.generating")}</div><div class="ai-text streaming" id="ai-text">${aiTextHtml(ai.text)}</div>`;
+    actions = `<button type="button" class="btn ghost small" data-action="aiCancel">${t("ai.cancel")}</button>`;
+  } else if (ai.status === "done" && ai.text) {
+    body = `<div class="ai-text">${aiTextHtml(ai.text)}</div><p class="ai-meta muted small">${t("ai.by", { model: esc(ai.model) })}</p>`;
+    if (keyed) actions = `<button type="button" class="btn ghost small" data-action="aiGenerate">${t("ai.regenerate")}</button>`;
+  } else {
+    const note = ai.status === "error" ? `<p class="ai-error">${esc(ai.error || "")}</p>` : ai.status === "refused" ? `<p class="ai-error">${t("ai.refused")}</p>` : "";
+    body = `${note}<div class="ai-text">${aiTextHtml(localReading(r, positionsFor(r)))}</div>`;
+    actions = keyed
+      ? `<button type="button" class="btn ghost small" data-action="aiGenerate">${ai.status === "error" ? t("ai.retry") : t("ai.generate")}</button>`
+      : `<p class="ai-hint muted small">${t("ai.hint")} <a href="#/settings">${t("ai.hintLink")}</a></p>`;
+  }
+  box.innerHTML = `<h3 class="section-title">${t("ai.title")}</h3><p class="ai-focus">${esc(focus)}</p>${body}<div class="ai-actions">${actions}</div>`;
+}
+
+async function startAi(r) {
+  if (!r || r.ai?.status === "streaming") return;
+  r.aiAbort?.abort();
+  const ctrl = new AbortController();
+  r.aiAbort = ctrl;
+  r.ai = { status: "streaming", text: "", model: "", lang: getLang() };
+  renderAiBox(r);
+  try {
+    const res = await streamReading(r, positionsFor(r), {
+      signal: ctrl.signal,
+      onText: (text) => {
+        if (state.reading !== r || ctrl.signal.aborted) return;
+        r.ai.text = text;
+        const el = document.getElementById("ai-text");
+        if (el) el.innerHTML = aiTextHtml(text);
+      },
+    });
+    if (ctrl.signal.aborted) return;
+    if (res.stopReason === "refusal" || !res.text) {
+      r.ai = { status: "refused", text: "", model: "", lang: getLang() };
+    } else {
+      r.ai = { status: "done", text: res.text, model: res.model, lang: getLang() };
+      persistAi(r);
+    }
+  } catch (e) {
+    if (ctrl.signal.aborted || e.code === "aborted") r.ai = { status: "idle", text: "", model: "", lang: "" };
+    else r.ai = { status: "error", text: "", model: "", lang: "", error: aiErrorText(e) };
+  } finally {
+    if (r.aiAbort === ctrl) r.aiAbort = null;
+  }
+  if (state.reading === r) renderAiBox(r);
+}
+
+function aiErrorText(e) {
+  const map = { sdk: "ai.err.sdk", auth: "ai.err.auth", rate: "ai.err.rate", billing: "ai.err.billing", busy: "ai.err.busy", network: "ai.err.network" };
+  return map[e?.code] ? t(map[e.code]) : t("ai.err.generic", { msg: String(e?.detail || e?.message || "").slice(0, 160) });
+}
+
+function persistAi(r) {
+  if (!r.historyId) return;
+  const list = store.get("tarot.history", []);
+  const e = list.find((x) => x.id === r.historyId);
+  if (!e) return;
+  e.ai = { text: r.ai.text, model: r.ai.model, lang: r.ai.lang };
+  store.set("tarot.history", list);
+}
+
+/* ======================================================================
+   Settings
+   ====================================================================== */
+function renderSettings() {
+  const s = getAiSettings();
+  state.settingsDraft = { apiKey: s.apiKey, model: s.model, auto: s.auto, show: false };
+  const last4 = s.apiKey ? s.apiKey.trim().slice(-4) : "";
+  app.innerHTML = `
+  <section class="panel settings">
+    <header class="panel-head">
+      <span class="panel-icon" aria-hidden="true">⚙</span>
+      <div><h2>${t("settings.title")}</h2><p class="muted">${t("settings.sub")}</p></div>
+    </header>
+    <p class="muted small" id="key-state">${s.apiKey ? t("settings.keySet", { last4: esc(last4) }) : t("settings.noKey")}</p>
+    <div class="field">
+      <label for="api-key">${t("settings.keyLabel")}</label>
+      <div class="key-row">
+        <input id="api-key" type="password" data-field="apiKey" value="${esc(s.apiKey)}" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+        <button type="button" class="btn ghost small" data-action="toggleKey" id="toggle-key">${t("settings.show")}</button>
+      </div>
+      <p class="muted small">${t("settings.keyHelp")} <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a></p>
+    </div>
+    <div class="field">
+      <label for="ai-model">${t("settings.model")}</label>
+      <select id="ai-model" data-field="aiModel">
+        ${AI_MODELS.map((m) => `<option value="${m.id}" ${m.id === s.model ? "selected" : ""}>${esc(L(m.name))}</option>`).join("")}
+      </select>
+    </div>
+    <label class="switch">
+      <input type="checkbox" data-field="aiAuto" ${s.auto ? "checked" : ""}>
+      <span class="switch-track" aria-hidden="true"></span>
+      <span class="switch-text">${t("settings.auto")}<small>${t("settings.autoHint")}</small></span>
+    </label>
+    <p class="muted small privacy">${t("settings.privacy")}</p>
+    <div class="actions">
+      <button type="button" class="btn primary" data-action="saveSettings">${t("settings.save")}</button>
+      <button type="button" class="btn ghost" data-action="testSettings">${t("settings.test")}</button>
+      ${s.apiKey ? `<button type="button" class="btn ghost danger" data-action="clearKey">${t("settings.clear")}</button>` : ""}
+    </div>
+    <p class="small center" id="settings-status"></p>
+  </section>`;
+}
+
+function setSettingsStatus(msg, kind = "") {
+  const el = document.getElementById("settings-status");
+  if (el) { el.textContent = msg; el.className = `small center ${kind}`; }
+}
+
+async function testSettings() {
+  const d = state.settingsDraft;
+  if (!d) return;
+  saveAiSettings({ apiKey: d.apiKey.trim(), model: d.model, auto: d.auto });
+  if (!d.apiKey.trim()) { setSettingsStatus(t("settings.noKey"), "err"); return; }
+  setSettingsStatus(t("settings.testing"));
+  try {
+    const res = await testConnection(d.apiKey, d.model);
+    setSettingsStatus(t("settings.testOk", { model: res.model }), "ok");
+  } catch (e) {
+    setSettingsStatus(aiErrorText(e), "err");
+  }
 }
 
 /* ======================================================================
@@ -738,7 +909,38 @@ function onClick(e) {
       revealAll();
       break;
     case "again":
-      if (r) { initReading(r.spreadId); render(); }
+      if (r) { r.aiAbort?.abort(); initReading(r.spreadId); render(); }
+      break;
+    case "aiGenerate":
+      if (r) startAi(r);
+      break;
+    case "aiCancel":
+      r?.aiAbort?.abort();
+      break;
+    case "toggleKey": {
+      const inp = document.getElementById("api-key");
+      if (inp && state.settingsDraft) {
+        state.settingsDraft.show = !state.settingsDraft.show;
+        inp.type = state.settingsDraft.show ? "text" : "password";
+        el.textContent = state.settingsDraft.show ? t("settings.hide") : t("settings.show");
+      }
+      break;
+    }
+    case "saveSettings":
+      if (state.settingsDraft) {
+        const d = state.settingsDraft;
+        saveAiSettings({ apiKey: d.apiKey.trim(), model: d.model, auto: d.auto });
+        toast(t("settings.saved"));
+        renderSettings();
+      }
+      break;
+    case "testSettings":
+      testSettings();
+      break;
+    case "clearKey":
+      saveAiSettings({ apiKey: "" });
+      toast(t("settings.saved"));
+      renderSettings();
       break;
     case "copy":
       copyReading();
@@ -780,6 +982,11 @@ function onInput(e) {
     if (host) host.innerHTML = libResultsHtml();
     return;
   }
+  if (state.settingsDraft) {
+    if (f === "apiKey") { state.settingsDraft.apiKey = el.value; return; }
+    if (f === "aiModel") { state.settingsDraft.model = el.value; return; }
+    if (f === "aiAuto") { state.settingsDraft.auto = el.checked; return; }
+  }
   if (!r) return;
   if (f === "question") r.question = el.value;
   else if (f === "topic") r.topic = el.value;
@@ -803,7 +1010,17 @@ document.getElementById("lang-toggle").addEventListener("click", () => {
   render();
   renderModal();
 });
-window.addEventListener("hashchange", () => { render(); window.scrollTo({ top: 0 }); });
+window.addEventListener("hashchange", () => {
+  const r = state.reading;
+  if (r) {
+    r.aiAbort?.abort();
+    // Re-entering a finished (or history) reading through navigation starts a fresh one;
+    // an unfinished reading survives so a language toggle or resize never resets it.
+    if (r.readonly || (r.stage === "spread" && r.cards.every((c) => c.revealed))) state.reading = null;
+  }
+  render();
+  window.scrollTo({ top: 0 });
+});
 window.addEventListener("resize", () => { if (state.reading?.stage === "pick") fitFan(); });
 
 setLang(getLang());

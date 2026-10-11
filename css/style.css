@@ -350,6 +350,34 @@ input, textarea { font: inherit; color: inherit; }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); background: #2a2452; color: var(--text); padding: .6rem 1.1rem; border-radius: 999px; border: 1px solid var(--line); opacity: 0; pointer-events: none; transition: all .25s; z-index: 60; font-size: .9rem; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---------- question-aware interpretation ---------- */
+.nav-icon { font-size: 1.15rem; line-height: 1; }
+.ai-section { margin: 1.4rem 0 .4rem; padding: 1.1rem 1.25rem 1rem; border-radius: var(--radius); background: linear-gradient(160deg, rgba(212,178,106,.09), rgba(139,123,223,.07)); border: 1px solid var(--line); }
+.ai-section .section-title { margin: 0 0 .6rem; text-align: left; }
+.ai-focus { color: var(--muted); font-size: .9rem; margin-bottom: .9rem; border-left: 2px solid var(--gold); padding-left: .7rem; }
+.ai-text p { margin: 0 0 .8rem; }
+.ai-text p:last-child { margin-bottom: 0; }
+.ai-text strong { color: var(--gold-2); font-weight: 600; }
+.ai-text.streaming p:last-child::after { content: "▍"; color: var(--gold); animation: blink 1s steps(2) infinite; margin-left: 1px; }
+@keyframes blink { 50% { opacity: 0; } }
+.ai-status { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .9rem; margin-bottom: .7rem; }
+.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(212,178,106,.25); border-top-color: var(--gold); animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.ai-error { color: var(--danger); font-size: .9rem; margin-bottom: .7rem; }
+.ai-actions { margin-top: .9rem; display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.ai-actions:empty { display: none; }
+.ai-meta { margin-top: .7rem; }
+
+/* ---------- settings ---------- */
+.settings .key-row { display: flex; gap: .5rem; align-items: stretch; }
+.settings .key-row input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9rem; }
+.settings select { width: 100%; padding: .65rem .9rem; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.25); color: var(--text); }
+.settings select:focus { border-color: var(--line-2); outline: none; }
+.settings .privacy { margin: 0 0 1rem; line-height: 1.6; }
+#settings-status { margin-top: .8rem; min-height: 1.4em; }
+#settings-status.ok { color: var(--ok); }
+#settings-status.err { color: var(--danger); }
+
 /* ---------- responsive ---------- */
 @media (max-width: 640px) {
   .site-head { gap: .5rem; padding: .7rem 16px; }
