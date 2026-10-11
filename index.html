@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>塔罗 · Tarot</title>
+  <meta name="description" content="在线抽塔罗牌：每日一牌、是/否、三牌阵、凯尔特十字。78 张韦特塔罗，中英双语牌义。Draw tarot cards online: card of the day, yes/no, three-card and Celtic Cross spreads, with bilingual meanings for all 78 Rider–Waite cards.">
+  <meta name="theme-color" content="#0a0916">
+  <meta property="og:title" content="塔罗 · Tarot">
+  <meta property="og:description" content="抽一张牌，听听此刻的回声。Draw a card. Listen to the moment.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://miemiechen.github.io/tarot_goodluck/img/cards/m17.jpg">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230f0d22'/%3E%3Ctext x='32' y='44' font-size='36' text-anchor='middle' fill='%23d4b26a'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-head">
+    <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true">✦</span><span class="brand-text" data-i18n="app.title">塔罗</span></a>
+    <nav class="site-nav" aria-label="main">
+      <a href="#/" data-nav="home" data-i18n="nav.reading">占卜</a>
+      <a href="#/library" data-nav="library" data-i18n="nav.library">牌库</a>
+      <a href="#/history" data-nav="history" data-i18n="nav.history">历史</a>
+    </nav>
+    <button id="lang-toggle" class="lang-btn" type="button">EN</button>
+  </header>
+
+  <main id="app" class="container">
+    <noscript><p class="empty">这个页面需要启用 JavaScript。 / This page needs JavaScript.</p></noscript>
+  </main>
+
+  <footer class="site-foot">
+    <p data-i18n="footer.credit">牌面图像：Rider–Waite–Smith（1909，公有领域）· 仅供娱乐与自我反思</p>
+    <p><a href="https://github.com/MieMieChen/tarot_goodluck" rel="noopener" data-i18n="footer.source">源码</a></p>
+  </footer>
+
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
