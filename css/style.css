@@ -368,6 +368,13 @@ input, textarea { font: inherit; color: inherit; }
 .ai-actions:empty { display: none; }
 .ai-meta { margin-top: .7rem; }
 
+/* ---------- hand-off to Claude ---------- */
+.handoff { margin: 1rem 0 .4rem; padding: 1.1rem 1.25rem 1.1rem; border-radius: var(--radius); border: 1px dashed var(--line-2); background: rgba(255,255,255,.025); }
+.handoff .section-title { margin: 0 0 .5rem; text-align: left; text-transform: none; letter-spacing: .06em; }
+.handoff .muted { margin-bottom: .9rem; line-height: 1.6; }
+.actions.left { justify-content: flex-start; margin-top: 0; }
+.btn:disabled { opacity: .5; cursor: progress; }
+
 /* ---------- settings ---------- */
 .settings .key-row { display: flex; gap: .5rem; align-items: stretch; }
 .settings .key-row input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9rem; }

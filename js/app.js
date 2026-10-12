@@ -3,6 +3,7 @@ import { CARDS, CARD_BY_ID, imgSrc } from "./data/index.js";
 import { t, L, other, getLang, setLang, formatDate, formatDay } from "./i18n.js";
 import { SPREADS, SPREAD_ORDER, THREE_SETS, CELTIC_LAYOUT } from "./spreads.js";
 import { AI_MODELS, getAiSettings, saveAiSettings, hasApiKey, hasQuestion, streamReading, testConnection, localReading } from "./ai.js";
+import { handoffPrompt, claudeUrl, canShareFiles, spreadImageBlob, imageFileName, downloadBlob } from "./handoff.js";
 
 const REVERSED_ONE_IN = 3;      // when reversed cards are allowed, ~1 in 3 comes up reversed
 const HISTORY_MAX = 60;
@@ -453,6 +454,16 @@ function renderSpread(r, spread) {
           ${c.revealed ? readingItemHtml(r, spread, i) : `<p class="muted small"><span class="num">${i + 1}</span>${esc(L(positions[i].name))} · ${t("reading.waiting")}</p>`}
         </div>`).join("")}
       <div class="ai-section" id="ai-section" hidden></div>
+      <div class="handoff" id="handoff" ${allRevealed ? "" : "hidden"}>
+        <h3 class="section-title">${t("handoff.title")}</h3>
+        <p class="muted small">${t("handoff.hint")}</p>
+        <div class="actions left">
+          <button type="button" class="btn primary small" data-action="handoffOpen">${t("handoff.open")}</button>
+          <button type="button" class="btn ghost small" data-action="handoffCopy">${t("handoff.copy")}</button>
+          <button type="button" class="btn ghost small" data-action="handoffImage">${t("handoff.image")}</button>
+          ${canShareFiles() ? `<button type="button" class="btn ghost small" data-action="handoffShare">${t("handoff.share")}</button>` : ""}
+        </div>
+      </div>
       <div class="reading-foot" id="reading-foot" ${allRevealed ? "" : "hidden"}>
         <p class="muted small">${t("reading.disclaimer")}</p>
         <div class="actions">
@@ -489,6 +500,8 @@ function onAllRevealed(r) {
   app.querySelector('[data-action="revealAll"]')?.remove();
   const foot = document.getElementById("reading-foot");
   if (foot) foot.hidden = false;
+  const handoff = document.getElementById("handoff");
+  if (handoff) handoff.hidden = false;
   if (!r.readonly && !r.saved) {
     saveHistory(r);
     r.saved = true;
@@ -615,8 +628,7 @@ function readingText(r) {
   return lines.join("\n");
 }
 
-async function copyReading() {
-  const text = readingText(state.reading);
+async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
@@ -630,7 +642,39 @@ async function copyReading() {
     try { document.execCommand("copy"); } catch { /* ignore */ }
     ta.remove();
   }
+}
+
+async function copyReading() {
+  await copyText(readingText(state.reading));
   toast(t("spread.copied"));
+}
+
+/* ---------- hand-off to Claude chat ---------- */
+function handoffOpen(r) {
+  const prompt = handoffPrompt(r, positionsFor(r));
+  const win = window.open(claudeUrl(prompt), "_blank", "noopener");
+  copyText(prompt).then(() => toast(win ? t("handoff.opened") : t("handoff.popup")));
+}
+
+async function handoffImage(r, share) {
+  const btns = app.querySelectorAll('[data-action="handoffImage"], [data-action="handoffShare"]');
+  btns.forEach((b) => { b.disabled = true; });
+  toast(t("handoff.working"));
+  try {
+    const blob = await spreadImageBlob(r, positionsFor(r));
+    const name = imageFileName(r);
+    if (share) {
+      const file = new File([blob], name, { type: "image/jpeg" });
+      await navigator.share({ files: [file], title: L(SPREADS[r.spreadId].name), text: handoffPrompt(r, positionsFor(r)) });
+    } else {
+      downloadBlob(blob, name);
+      toast(t("handoff.saved"));
+    }
+  } catch (e) {
+    if (e?.name !== "AbortError") toast(t("handoff.imgFail"));
+  } finally {
+    btns.forEach((b) => { b.disabled = false; });
+  }
 }
 
 let toastTimer = 0;
@@ -944,6 +988,18 @@ function onClick(e) {
       break;
     case "copy":
       copyReading();
+      break;
+    case "handoffOpen":
+      if (r) handoffOpen(r);
+      break;
+    case "handoffCopy":
+      if (r) copyText(handoffPrompt(r, positionsFor(r))).then(() => toast(t("handoff.copied")));
+      break;
+    case "handoffImage":
+      if (r) handoffImage(r, false);
+      break;
+    case "handoffShare":
+      if (r) handoffImage(r, true);
       break;
     case "detail":
       openModal(el.dataset.id, el.dataset.rev === "1");
